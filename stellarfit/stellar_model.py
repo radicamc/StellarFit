@@ -31,7 +31,7 @@ class StellarModel:
         ----------
         input_parameters : dict
             Dictionary of input parameters.
-        stellar_grid :
+        stellar_grid : scipy RegularGridInterpolator object
             Grid of stellar models.
         dt_min : float
             Minimum allowed temperature difference between the photosphere
@@ -251,7 +251,7 @@ def load_phoenix_grid(temperatures, log_gs, input_dir, flux_conv_factor,
     prebin_waves : ndarray(float)
         Array of wavelengths corresponding to the model stellar spectra at the
         specified prebinned resolution.
-    stellar_grid :
+    stellar_grid : scipy RegularGridInterpolator object
         Grid of stellar models at the specified grid points and binned to the
         prebinned resolution.
     """

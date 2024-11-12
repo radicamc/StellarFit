@@ -43,7 +43,7 @@ class Dataset:
             Stellar spectrum to fit.
         errors : array-like(float)
             Errors on the observed stellar spectrum.
-        stellar_grid :
+        stellar_grid : scipy RegularGridInterpolator object
             Stellar model grid.
         silent : bool
             If False, don't show any progress bars or prints.
