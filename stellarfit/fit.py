@@ -24,9 +24,31 @@ from stellarfit.utils import fancyprint
 
 
 class Dataset:
+    """A wrapper class around StellarModel which stores a set of stellar
+    spectrum observations and performs light curve fits.
+    """
 
     def __init__(self, input_parameters, wavelengths, observations, errors,
                  stellar_grid, silent=False):
+        """Initialize the Dataset class.
+
+        Parameters
+        ----------
+        input_parameters : dict
+            Dictionary of input parameters and values. Should have form
+            {parameter: value}.
+        wavelengths : array-like(float)
+            Wavelength axis of data to fit.
+        observations : array-like(float)
+            Stellar spectrum to fit.
+        errors : array-like(float)
+            Errors on the observed stellar spectrum.
+        stellar_grid :
+            Stellar model grid.
+        silent : bool
+            If False, don't show any progress bars or prints.
+        """
+
         self.input_parameters = input_parameters
         self.wave = wavelengths
         self.obs = observations
@@ -39,6 +61,27 @@ class Dataset:
 
     def fit(self, output_file, sampler='MCMC', mcmc_start=None,
             mcmc_steps=10000, continue_mcmc=False, dynesty_args=None):
+        """Run a spectrum fit.
+
+        Parameters
+        ----------
+        output_file : str
+            Path to file to which to save outputs.
+        sampler : str
+            Sampling to use, either 'MCMC' or 'Nested Sampling'.
+        mcmc_start : ndarray(float)
+            Starting positions for MCMC sampling. MCMC only.
+        mcmc_steps : int
+            Number of steps to take for MCMC sampling. MCMC only.
+        mcmc_ncores : int
+            Number of cores for multiprocessing. MCMC only.
+        continue_mcmc : bool
+            If True, continue from a previous MCMC run saved in output_file.
+            MCMC only.
+        dynesty_args : dict
+            Keyword arguments to pass to the dynesty NestedSampler instance.
+            Nested Sampling only.
+        """
 
         # Set up and save output file name.
         if output_file[-3:] != '.h5':
@@ -66,9 +109,8 @@ class Dataset:
                 elif dist == 'truncated_normal':
                     self.input_parameters[param]['function'] = priors.logprior_truncatednormal
                 else:
-                    msg = 'Unknown distribution {0} for parameter ' \
-                          '{1}'.format(dist, param)
-                    raise ValueError(msg)
+                    raise ValueError('Unknown distribution {0} for parameter '
+                                     '{1}'.format(dist, param))
 
             if continue_mcmc is False:
                 msg = 'Starting positions must be provided for MCMC sampling.'
@@ -105,9 +147,8 @@ class Dataset:
                 elif dist == 'truncated_normal':
                     self.input_parameters[param]['function'] = priors.transform_truncatednormal
                 else:
-                    msg = 'Unknown distribution {0} for parameter ' \
-                          '{1}'.format(dist, param)
-                    raise ValueError(msg)
+                    raise ValueError('Unknown distribution {0} for '
+                                     'parameter {1}'.format(dist, param))
                 ndim += 1
 
             # Arguments for the log likelihood function call.
@@ -238,6 +279,33 @@ class Dataset:
 
 def fit_emcee(log_prob, output_file, initial_pos=None, continue_run=False,
               silent=False, mcmc_steps=10000, log_probability_args=None):
+    """Run a light curve fit via MCMC using the emcee sampler.
+
+    Parameters
+    ----------
+    log_prob : function
+        Callable function to evaluate the fit log probability.
+    output_file : str
+        File to which to save outputs. If continuing a run, this should also
+        be the input file containing the previous MCMC chains.
+    initial_pos : ndarray(float), None
+        Starting positions for the MCMC sampling.
+    continue_run : bool
+        If True, continue a run from the state of previous MCMC chains.
+    silent : bool
+        If True, do not show any progress.
+    mcmc_steps : int
+        Number of MCMC steps before stopping.
+    log_probability_args : tuple
+        Arguments for the passed log_prob function.
+    ncores : int
+        Number of cores to use for multiprocessing.
+
+    Returns
+    -------
+    sampler : emcee.ensemble.EnsembleSampler
+        ecmee sampler.
+    """
 
     # If we want to restart from a previous chain, make sure all is good.
     if continue_run is True:
@@ -292,6 +360,29 @@ def fit_emcee(log_prob, output_file, initial_pos=None, continue_run=False,
 
 
 def log_likelihood(theta, param_dict, wave, data, errors, model_grid):
+    """Evaluate the log likelihood for a dataset and a given set of model
+    parameters.
+
+    Parameters
+    ----------
+    theta : list(float)
+        List of values for each fitted parameter.
+    param_dict : dict
+        Dictionary of input parameter values and prior distributions.
+    wave : array-like(float)
+        Wavelength axis.
+    data : array-like(float)
+        Spectrum to fit.
+    errors: array-like(float)
+        Errors on the stellar spectrum
+    model_grid :
+        Stellar model grid.
+
+    Returns
+    -------
+    log_like : float
+        Result of likelihood evaluation.
+    """
 
     pcounter = 0
     this_param = copy.deepcopy(param_dict)
@@ -303,8 +394,8 @@ def log_likelihood(theta, param_dict, wave, data, errors, model_grid):
         pcounter += 1
 
     try:
-        thismodel = StellarModel(this_param, wave, model_grid)
-        thismodel.compute_model()
+        thismodel = StellarModel(this_param, model_grid)
+        thismodel.compute_model(data_wavelengths=wave)
     except ValueError:
         return -np.inf
 
@@ -319,6 +410,29 @@ def log_likelihood(theta, param_dict, wave, data, errors, model_grid):
 
 
 def log_probability(theta, param_dict, wave, data, errors, model_grid):
+    """Evaluate the log probability for a dataset and a given set of model
+    parameters.
+
+    Parameters
+    ----------
+    theta : list(float)
+        List of values for each fitted parameter.
+    param_dict : dict
+        Dictionary of input parameter values and prior distributions.
+    wave : array-like(float)
+        Wavelength axis.
+    data : array-like(float)
+        Spectrum to fit.
+    errors: array-like(float)
+        Errors on the stellar spectrum
+    model_grid :
+        Stellar model grid.
+
+    Returns
+    -------
+    log_prob : float
+        Result of probability evaluation.
+    """
 
     lp = set_logprior(theta, param_dict)
     if not np.isfinite(lp):
@@ -333,6 +447,21 @@ def log_probability(theta, param_dict, wave, data, errors, model_grid):
 
 
 def set_logprior(theta, param_dict):
+    """Calculate the fit prior based on a set of input values and prior
+    functions.
+
+    Parameters
+    ----------
+    theta : list(float)
+        List of values for each fitted parameter.
+    param_dict : dict
+        Dictionary of input parameter values and prior distributions.
+
+    Returns
+    -------
+    log_prior : float
+        Result of prior evaluation.
+    """
 
     log_prior = 0
     pcounter = 0

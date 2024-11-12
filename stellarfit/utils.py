@@ -16,6 +16,7 @@ import os
 
 def download_stellar_spectra(st_teff, st_logg, st_met, outdir, silent=False):
     """Download a grid of PHOENIX model stellar spectra.
+    Borrowed from exoTEDRF.
 
     Parameters
     ----------
@@ -106,6 +107,7 @@ def get_param_dict_from_fit(filename, method='median', mcmc_burnin=None,
                             mcmc_thin=15, silent=False, drop_chains=None):
     """Reformat fit outputs from MCMC or NS into the parameter dictionary
     format expected by Model.
+    Borrowed from exoUPRF.
 
     Parameters
     ----------
@@ -201,6 +203,7 @@ def get_results_from_fit(filename, mcmc_burnin=None, mcmc_thin=15,
                          silent=False, drop_chains=None):
     """Extract posterior sample statistics (median and 1 sigma bounds) for
     each fitted parameter.
+    Borrowed from exoUPRF.
 
     Parameters
     ----------
@@ -283,6 +286,7 @@ def get_results_from_fit(filename, mcmc_burnin=None, mcmc_thin=15,
 def get_stellar_param_grid(st_teff, st_logg, st_met):
     """Given a set of stellar parameters, determine the neighbouring grid
     points based on the PHOENIX grid steps.
+    Borrowed from exoTEDRF.
 
     Parameters
     ----------
