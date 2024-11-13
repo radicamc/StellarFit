@@ -79,14 +79,16 @@ class StellarModel:
             self.input_parameters['scale'] = {}
             self.input_parameters['scale']['value'] = 1
 
-    def compute_model(self, data_wavelengths=None):
+    def compute_model(self, data_wave_low=None, data_wave_high=None):
         """Compute a stellar spectrum model with the given set of input
         parameters and bin (if desired).
 
         Parameters
         ----------
-        data_wavelengths : array-like(float), None
-            Wavelengths (in µm) of the data to which to bin the model.
+        data_wave_low : array-like(float), None
+            Lower edges of data wavelength bins (in µm).
+        data_wave_high : array-like(float), None
+            Upper edges of data wavelength bins (in µm).
         """
 
         # Get the appropriate stellar model from the model grid.
@@ -131,16 +133,19 @@ class StellarModel:
         scale = self.input_parameters['scale']['value']
         star = scale * ((1 - f_spot - f_fac) * phot_mod + spot_mod + fac_mod)
 
-        if data_wavelengths is not None:
+        if data_wave_low is not None:
+            assert len(data_wave_low) == len(data_wave_high)
+            data_wave = np.mean([data_wave_low, data_wave_high], axis=0)
             # For PHOENIX models, bin down to resolution of the data.
             if self.stellar_grid.model_type == 'PHOENIX':
-                star = spectres.spectres(data_wavelengths,
-                                         self.stellar_grid.wavelengths, star)
+                star = utils.resample_model(data_wave_low, data_wave_high,
+                                            self.stellar_grid.wavelengths,
+                                            star)
             # For SPHINX models, bin data down to model resolution.
             else:
-                star = np.interp(data_wavelengths,
+                star = np.interp(data_wave,
                                  self.stellar_grid.wavelengths, star)
-            waves = data_wavelengths
+            waves = data_wave
         else:
             waves = self.stellar_grid.wavelengths
 

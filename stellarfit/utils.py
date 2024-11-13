@@ -334,3 +334,42 @@ def get_stellar_param_grid(st_teff, st_logg, st_met):
         mets = [met_lw, met_up]
 
     return teffs, loggs, mets
+
+
+def resample_model(data_wave_min, data_wave_max, mod_wave, mod_flux):
+    """Resample a high-resolution model to the wavelength sampling of the data
+    using trapezoidal integration.
+
+    Parameters
+    ----------
+    data_wave_min : array-like(float)
+        Lower edges of data wavelength bins.
+    data_wave_max : array-like(float)
+        Upper edges of data wavelength bins.
+    mod_wave : array-like(float)
+        Model wavelengths.
+    mod_flux : array-like(float)
+        Model spectrum flux values.
+
+    Returns
+    -------
+    flux_resamp : ndarray(float)
+        Model flux resampled to match the data bins.
+    """
+
+    flux_resamp = []
+    assert len(data_wave_min) == len(data_wave_max)
+    # Get model wavelength spacing.
+    dwave = mod_wave[1:] - mod_wave[:-1]
+
+    # Loop over all data wavelength bins.
+    for i in range(len(data_wave_min)):
+        # All model wavelengths within this bin.
+        ii = np.where((mod_wave >= data_wave_min[i]) & (mod_wave < data_wave_max[i]))
+        # Integrate the model flux over the wavelength bin.
+        numerator = np.trapz(mod_flux[ii] * dwave[ii], x=mod_wave[ii])
+        denominator = np.trapz(dwave[ii], x=mod_wave[ii])
+        flux_resamp.append(numerator/denominator)
+    flux_resamp = np.array(flux_resamp)
+
+    return flux_resamp

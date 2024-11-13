@@ -28,8 +28,8 @@ class Dataset:
     spectrum observations and performs light curve fits.
     """
 
-    def __init__(self, input_parameters, wavelengths, observations, errors,
-                 stellar_grid, silent=False):
+    def __init__(self, input_parameters, wavebins_low, wavebins_high,
+                 observations, errors, stellar_grid, silent=False):
         """Initialize the Dataset class.
 
         Parameters
@@ -37,8 +37,10 @@ class Dataset:
         input_parameters : dict
             Dictionary of input parameters and values. Should have form
             {parameter: value}.
-        wavelengths : array-like(float)
-            Wavelength axis of data to fit.
+        wavebins_low : array-like(float)
+            Lower edges of data wavelength bins.
+        wavebins_high : array-like(float)
+            Upper edges of data wavelength bins.
         observations : array-like(float)
             Stellar spectrum to fit.
         errors : array-like(float)
@@ -50,7 +52,8 @@ class Dataset:
         """
 
         self.input_parameters = input_parameters
-        self.wave = wavelengths
+        self.wave_low = wavebins_low
+        self.wave_up = wavebins_high
         self.obs = observations
         self.errors = errors
         self.stellar_grid = stellar_grid
@@ -73,8 +76,6 @@ class Dataset:
             Starting positions for MCMC sampling. MCMC only.
         mcmc_steps : int
             Number of steps to take for MCMC sampling. MCMC only.
-        mcmc_ncores : int
-            Number of cores for multiprocessing. MCMC only.
         continue_mcmc : bool
             If True, continue from a previous MCMC run saved in output_file.
             MCMC only.
@@ -117,8 +118,9 @@ class Dataset:
                 assert mcmc_start is not None, msg
 
             # Arguments for the log probability function call.
-            log_prob_args = (self.input_parameters, self.wave, self.obs,
-                             self.errors, self.stellar_grid)
+            log_prob_args = (self.input_parameters, self.wave_low,
+                             self.wave_up, self.obs, self.errors,
+                             self.stellar_grid)
 
             # Initialize and run the emcee sampler.
             mcmc_sampler = fit_emcee(log_probability, initial_pos=mcmc_start,
@@ -152,8 +154,9 @@ class Dataset:
                 ndim += 1
 
             # Arguments for the log likelihood function call.
-            log_like_args = (self.input_parameters, self.wave, self.obs,
-                             self.errors, self.stellar_grid)
+            log_like_args = (self.input_parameters, self.wave_low,
+                             self.wave_up, self.obs, self.errors,
+                             self.stellar_grid)
             ptform_kwargs = {'param_dict': self.input_parameters}
 
             nested_sampler = fit_dynesty(set_prior_transform, log_likelihood,
@@ -277,6 +280,79 @@ class Dataset:
                                   drop_chains=drop_chains)
 
 
+def fit_dynesty(prior_transform, log_like, ndim, output_file,
+                log_like_args, ptform_kwargs, dynesty_args=None, silent=False):
+    """Run a light curve fit via nested sampling using the dynesty.
+
+    Parameters
+    ----------
+    prior_transform : function
+        Callable function to evaluate the prior transform.
+    log_like : function
+        Callable function to evaluate the log likelihood.
+    ndim : int
+        Number of sampling dimensions.
+    output_file : str
+        File to which to save outputs.
+    log_like_args : dict
+        Arguments for the log likelihood function.
+    ptform_kwargs : dict
+        Arguments for the prior transform function.
+    dynesty_args : dict
+        Arguments for dynesty NestedSampler instance.
+    silent : bool
+        If True, do not show progress updates.
+
+    Returns
+    -------
+    sampler : dynesty.nestedsamplers.MultiEllipsoidSampler
+        dynesty sampler.
+    """
+
+    if dynesty_args is None:
+        dynesty_args = {}
+
+    # Create all the metadata for this fit.
+    hf = h5py.File(output_file, 'w')
+    hf.attrs['Author'] = os.environ.get('USER')
+    hf.attrs['Date'] = datetime.utcnow().replace(microsecond=0).isoformat()
+    hf.attrs['Code'] = 'exoUPRF'
+    hf.attrs['Sampling'] = 'Nested Sampling'
+
+    # Add prior info.
+    inputs = log_like_args[0]
+    for i, param in enumerate(inputs.keys()):
+        g = hf.create_group('inputs/{}'.format(param))
+        g.attrs['location'] = i
+        dt = h5py.string_dtype()
+        g.create_dataset('distribution',
+                         data=inputs[param]['distribution'], dtype=dt)
+        g.create_dataset('value', data=inputs[param]['value'])
+    hf.close()
+
+    # Initialize and run nested sampler.
+    sampler = NestedSampler(log_like, prior_transform, ndim,
+                            logl_args=log_like_args, sample='rwalk',
+                            ptform_kwargs=ptform_kwargs, **dynesty_args)
+    sampler.run_nested(print_progress=not silent)
+
+    # Get dynesty results dictionary.
+    results = sampler.results
+    # Reweight samples.
+    weights = np.exp(results['logwt'] - results['logz'][-1])
+    posterior_samples = resample_equal(results.samples, weights)
+
+    # Save fit info to file
+    hf = h5py.File(output_file, 'a')
+    hf.attrs['logZ'] = results['logz'][-1]
+
+    g = hf.create_group('ns')
+    g.create_dataset('chain', data=posterior_samples)
+    hf.close()
+
+    return sampler
+
+
 def fit_emcee(log_prob, output_file, initial_pos=None, continue_run=False,
               silent=False, mcmc_steps=10000, log_probability_args=None):
     """Run a light curve fit via MCMC using the emcee sampler.
@@ -359,7 +435,8 @@ def fit_emcee(log_prob, output_file, initial_pos=None, continue_run=False,
     return sampler
 
 
-def log_likelihood(theta, param_dict, wave, data, errors, model_grid):
+def log_likelihood(theta, param_dict, wavebins_low, wavebins_up, data, errors,
+                   model_grid):
     """Evaluate the log likelihood for a dataset and a given set of model
     parameters.
 
@@ -369,8 +446,10 @@ def log_likelihood(theta, param_dict, wave, data, errors, model_grid):
         List of values for each fitted parameter.
     param_dict : dict
         Dictionary of input parameter values and prior distributions.
-    wave : array-like(float)
-        Wavelength axis.
+    wavebins_low : array-like(float)
+        Lower edges of wavelength bins.
+    wavebins_up : array-like(float)
+        Upper edges of wavelength bins.
     data : array-like(float)
         Spectrum to fit.
     errors: array-like(float)
@@ -395,7 +474,8 @@ def log_likelihood(theta, param_dict, wave, data, errors, model_grid):
 
     try:
         thismodel = StellarModel(this_param, model_grid)
-        thismodel.compute_model(data_wavelengths=wave)
+        thismodel.compute_model(data_wave_low=wavebins_low,
+                                data_wave_high=wavebins_up)
     except ValueError:
         return -np.inf
 
@@ -409,7 +489,8 @@ def log_likelihood(theta, param_dict, wave, data, errors, model_grid):
     return log_like
 
 
-def log_probability(theta, param_dict, wave, data, errors, model_grid):
+def log_probability(theta, param_dict, wavebins_low, wavebins_up, data,
+                    errors, model_grid):
     """Evaluate the log probability for a dataset and a given set of model
     parameters.
 
@@ -419,8 +500,10 @@ def log_probability(theta, param_dict, wave, data, errors, model_grid):
         List of values for each fitted parameter.
     param_dict : dict
         Dictionary of input parameter values and prior distributions.
-    wave : array-like(float)
-        Wavelength axis.
+    wavebins_low : array-like(float)
+        Lower edges of wavelength bins.
+    wavebins_up : array-like(float)
+        Upper edges of wavelength bins.
     data : array-like(float)
         Spectrum to fit.
     errors: array-like(float)
@@ -437,7 +520,8 @@ def log_probability(theta, param_dict, wave, data, errors, model_grid):
     lp = set_logprior(theta, param_dict)
     if not np.isfinite(lp):
         return -np.inf
-    ll = log_likelihood(theta, param_dict, wave, data, errors, model_grid)
+    ll = log_likelihood(theta, param_dict, wavebins_low, wavebins_up, data,
+                        errors, model_grid)
     if not np.isfinite(ll):
         return -np.inf
 
@@ -473,79 +557,6 @@ def set_logprior(theta, param_dict):
         pcounter += 1
 
     return log_prior
-
-
-def fit_dynesty(prior_transform, log_like, ndim, output_file,
-                log_like_args, ptform_kwargs, dynesty_args=None, silent=False):
-    """Run a light curve fit via nested sampling using the dynesty.
-
-    Parameters
-    ----------
-    prior_transform : function
-        Callable function to evaluate the prior transform.
-    log_like : function
-        Callable function to evaluate the log likelihood.
-    ndim : int
-        Number of sampling dimensions.
-    output_file : str
-        File to which to save outputs.
-    log_like_args : dict
-        Arguments for the log likelihood function.
-    ptform_kwargs : dict
-        Arguments for the prior transform function.
-    dynesty_args : dict
-        Arguments for dynesty NestedSampler instance.
-    silent : bool
-        If True, do not show progress updates.
-
-    Returns
-    -------
-    sampler : dynesty.nestedsamplers.MultiEllipsoidSampler
-        dynesty sampler.
-    """
-
-    if dynesty_args is None:
-        dynesty_args = {}
-
-    # Create all the metadata for this fit.
-    hf = h5py.File(output_file, 'w')
-    hf.attrs['Author'] = os.environ.get('USER')
-    hf.attrs['Date'] = datetime.utcnow().replace(microsecond=0).isoformat()
-    hf.attrs['Code'] = 'exoUPRF'
-    hf.attrs['Sampling'] = 'Nested Sampling'
-
-    # Add prior info.
-    inputs = log_like_args[0]
-    for i, param in enumerate(inputs.keys()):
-        g = hf.create_group('inputs/{}'.format(param))
-        g.attrs['location'] = i
-        dt = h5py.string_dtype()
-        g.create_dataset('distribution',
-                         data=inputs[param]['distribution'], dtype=dt)
-        g.create_dataset('value', data=inputs[param]['value'])
-    hf.close()
-
-    # Initialize and run nested sampler.
-    sampler = NestedSampler(log_like, prior_transform, ndim,
-                            logl_args=log_like_args, sample='rwalk',
-                            ptform_kwargs=ptform_kwargs, **dynesty_args)
-    sampler.run_nested(print_progress=not silent)
-
-    # Get dynesty results dictionary.
-    results = sampler.results
-    # Reweight samples.
-    weights = np.exp(results['logwt'] - results['logz'][-1])
-    posterior_samples = resample_equal(results.samples, weights)
-
-    # Save fit info to file
-    hf = h5py.File(output_file, 'a')
-    hf.attrs['logZ'] = results['logz'][-1]
-
-    g = hf.create_group('ns')
-    g.create_dataset('chain', data=posterior_samples)
-    hf.close()
-
-    return sampler
 
 
 def set_prior_transform(theta, param_dict):
