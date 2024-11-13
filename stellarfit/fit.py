@@ -64,7 +64,8 @@ class Dataset:
         self.nested_sampler = None
 
     def fit(self, output_file, sampler='MCMC', mcmc_start=None, mcmc_ncores=1,
-            mcmc_steps=10000, continue_mcmc=False, dynesty_args=None):
+            mcmc_steps=10000, continue_mcmc=False, dynesty_args=None,
+            highpass_filter=False, force_redo=False):
         """Run a spectrum fit.
 
         Parameters
@@ -85,6 +86,10 @@ class Dataset:
         dynesty_args : dict
             Keyword arguments to pass to the dynesty NestedSampler instance.
             Nested Sampling only.
+        highpass_filter : bool
+            If True, highpass filter the model.
+        force_redo : bool
+            If True, will overwrite previous output files.
         """
 
         # Set up and save output file name.
@@ -95,6 +100,13 @@ class Dataset:
         outdir = os.path.dirname(self.output_file)
         if not os.path.exists(outdir):
             Path(outdir).mkdir(parents=True, exist_ok=True)
+        else:
+            if force_redo is True:
+                fancyprint('force_redo=True, existing file {} will be '
+                           'overwritten.'.format(output_file), msg_type='WARNING')
+            else:
+                raise ValueError('Output file already {} exists and '
+                                 'force_redo=False.'.format(output_file))
 
         # For MCMC sampling with emcee.
         if sampler == 'MCMC':
@@ -123,7 +135,7 @@ class Dataset:
             # Arguments for the log probability function call.
             log_prob_args = (self.input_parameters, self.wave_low,
                              self.wave_up, self.obs, self.errors,
-                             self.stellar_grid)
+                             self.stellar_grid, highpass_filter)
 
             # Initialize and run the emcee sampler.
             mcmc_sampler = fit_emcee(log_probability, initial_pos=mcmc_start,
@@ -160,7 +172,7 @@ class Dataset:
             # Arguments for the log likelihood function call.
             log_like_args = (self.input_parameters, self.wave_low,
                              self.wave_up, self.obs, self.errors,
-                             self.stellar_grid)
+                             self.stellar_grid, highpass_filter)
             ptform_kwargs = {'param_dict': self.input_parameters}
 
             nested_sampler = fit_dynesty(set_prior_transform, log_likelihood,
@@ -443,7 +455,7 @@ def fit_emcee(log_prob, output_file, initial_pos=None, continue_run=False,
 
 
 def log_likelihood(theta, param_dict, wavebins_low, wavebins_up, data, errors,
-                   model_grid):
+                   model_grid, highpass_filter=False):
     """Evaluate the log likelihood for a dataset and a given set of model
     parameters.
 
@@ -463,6 +475,8 @@ def log_likelihood(theta, param_dict, wavebins_low, wavebins_up, data, errors,
         Errors on the stellar spectrum
     model_grid :
         Stellar model grid.
+    highpass_filter : bool
+        If True, highpass filter the model.
 
     Returns
     -------
@@ -482,22 +496,30 @@ def log_likelihood(theta, param_dict, wavebins_low, wavebins_up, data, errors,
     try:
         thismodel = StellarModel(this_param, model_grid)
         thismodel.compute_model(data_wave_low=wavebins_low,
-                                data_wave_high=wavebins_up)
+                                data_wave_high=wavebins_up,
+                                highpass_filter=highpass_filter)
     except ValueError:
         return -np.inf
 
+    # Error inflation.
     if 'sigma' in this_param.keys():
         thiserr = errors * this_param['sigma']['value']
     else:
         thiserr = errors
 
-    log_like = -0.5 * np.nansum(np.log(2 * np.pi * thiserr**2) + ((data - thismodel.model)/thiserr)**2)
+    # Highpass filtering.
+    if highpass_filter is True:
+        thisdata = utils.highpass_filter(data)
+    else:
+        thisdata = data
+
+    log_like = -0.5 * np.nansum(np.log(2 * np.pi * thiserr**2) + ((thisdata - thismodel.model)/thiserr)**2)
 
     return log_like
 
 
 def log_probability(theta, param_dict, wavebins_low, wavebins_up, data,
-                    errors, model_grid):
+                    errors, model_grid, highpass_filter=False):
     """Evaluate the log probability for a dataset and a given set of model
     parameters.
 
@@ -517,6 +539,8 @@ def log_probability(theta, param_dict, wavebins_low, wavebins_up, data,
         Errors on the stellar spectrum
     model_grid :
         Stellar model grid.
+    highpass_filter : bool
+        If True, highpass filter the model.
 
     Returns
     -------
@@ -528,7 +552,7 @@ def log_probability(theta, param_dict, wavebins_low, wavebins_up, data,
     if not np.isfinite(lp):
         return -np.inf
     ll = log_likelihood(theta, param_dict, wavebins_low, wavebins_up, data,
-                        errors, model_grid)
+                        errors, model_grid, highpass_filter=highpass_filter)
     if not np.isfinite(ll):
         return -np.inf
 

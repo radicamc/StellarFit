@@ -79,7 +79,8 @@ class StellarModel:
             self.input_parameters['scale'] = {}
             self.input_parameters['scale']['value'] = 1
 
-    def compute_model(self, data_wave_low=None, data_wave_high=None):
+    def compute_model(self, data_wave_low=None, data_wave_high=None,
+                      highpass_filter=False):
         """Compute a stellar spectrum model with the given set of input
         parameters and bin (if desired).
 
@@ -89,6 +90,8 @@ class StellarModel:
             Lower edges of data wavelength bins (in µm).
         data_wave_high : array-like(float), None
             Upper edges of data wavelength bins (in µm).
+        highpass_filter : bool
+            If True, highpass filter the model.
         """
 
         # Get the appropriate stellar model from the model grid.
@@ -148,6 +151,11 @@ class StellarModel:
             waves = data_wave
         else:
             waves = self.stellar_grid.wavelengths
+
+        # Highpass filter the model if requested.
+        if highpass_filter is True:
+            star[0] = star[1]
+            star = utils.highpass_filter(star)
 
         self.model = star
         self.wavelengths = waves
