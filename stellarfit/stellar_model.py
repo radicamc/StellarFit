@@ -98,8 +98,8 @@ class StellarModel:
         if self.spots is True:
             t_spot = t - self.input_parameters['dt_spot']['value']
             f_spot = self.input_parameters['f_spot']['value']
-            if 'logg_spot' in self.input_parameters.keys():
-                g_spot = self.input_parameters['logg_spot']['value']
+            if 'dg_spot' in self.input_parameters.keys():
+                g_spot = g + self.input_parameters['dg_spot']['value']
             else:
                 g_spot = g
             spot_mod = f_spot * self.stellar_grid.stellar_grid((t_spot,
@@ -112,8 +112,8 @@ class StellarModel:
         if self.faculae is True:
             t_fac = t + self.input_parameters['dt_fac']['value']
             f_fac = self.input_parameters['f_fac']['value']
-            if 'logg_fac' in self.input_parameters.keys():
-                g_fac = self.input_parameters['logg_fac']['value']
+            if 'dg_fac' in self.input_parameters.keys():
+                g_fac = g - self.input_parameters['dg_fac']['value']
             else:
                 g_fac = g
             fac_mod = f_fac * self.stellar_grid.stellar_grid((t_fac, g_fac))
