@@ -12,6 +12,7 @@ from datetime import datetime
 import h5py
 import numpy as np
 import os
+from scipy.signal import butter, filtfilt
 
 
 def download_stellar_spectra(st_teff, st_logg, st_met, outdir, silent=False):
@@ -334,6 +335,13 @@ def get_stellar_param_grid(st_teff, st_logg, st_met):
         mets = [met_lw, met_up]
 
     return teffs, loggs, mets
+
+
+def highpass_filter(signal, order=3, freq=0.01):
+    """High pass filter."""
+    b, a = butter(order, freq, btype='high')
+    signal_filt = filtfilt(b, a, signal)
+    return signal_filt
 
 
 def resample_model(data_wave_min, data_wave_max, mod_wave, mod_flux):

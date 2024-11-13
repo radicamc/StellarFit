@@ -189,7 +189,8 @@ class StellarGrid:
         self.wavelengths = None
         self.stellar_grid = None
 
-    def load_grid(self, wave_low=0.5, wave_high=3, prebin_res=10000):
+    def load_grid(self, wave_low=0.5, wave_high=3, prebin_res=10000,
+                  highpass_filter=False):
         """Load in the stellar model grid.
 
         Parameters
@@ -200,6 +201,8 @@ class StellarGrid:
             High wavelength cut off for stellar mdoels (in µm).
         prebin_res : int
             Resolution to which to bin stellar models.
+        highpass_filter : bool
+            If True, highpass filter the models to remove the continuum.
         """
 
         if self.model_type == 'PHOENIX':
@@ -210,7 +213,8 @@ class StellarGrid:
                                                     silent=self.silent,
                                                     wave_low=wave_low,
                                                     wave_high=wave_high,
-                                                    prebin_res=prebin_res)
+                                                    prebin_res=prebin_res,
+                                                    highpass_filter=highpass_filter)
 
         elif self.model_type == 'SPHINX':
             waves, stellar_grid = load_sphinx_grid(self.temperatures,
@@ -228,7 +232,8 @@ class StellarGrid:
 
 
 def load_phoenix_grid(temperatures, log_gs, input_dir, flux_conv_factor,
-                      wave_low, wave_high, prebin_res=10000, silent=False):
+                      wave_low, wave_high, prebin_res=10000, silent=False,
+                      highpass_filter=False):
     """Load a grid of PHOENIX stellar models.
 
     Parameters
@@ -250,6 +255,8 @@ def load_phoenix_grid(temperatures, log_gs, input_dir, flux_conv_factor,
         Resolution to which to bin stellar models.
     silent : bool
         If True, don't show any status prints.
+    highpass_filter : bool
+        If True, highpass filter the models to remove the continuum.
 
     Returns
     -------
@@ -319,6 +326,10 @@ def load_phoenix_grid(temperatures, log_gs, input_dir, flux_conv_factor,
         mod_spec = fits.getdata(flux_file[0]) * 1e-4 * flux_conv_factor
         # Bin spectrum to pre-bin resolution.
         mod_spec = spectres.spectres(prebin_waves, wavelengths, mod_spec[ii])
+        # Highpass filter the model if desired.
+        if highpass_filter is True:
+            mod_spec[0] = mod_spec[1]
+            mod_spec = utils.highpass_filter(mod_spec)
         spectra.append(mod_spec)
 
     # Create the grid.
