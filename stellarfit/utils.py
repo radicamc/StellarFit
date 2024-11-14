@@ -381,3 +381,16 @@ def resample_model(data_wave_min, data_wave_max, mod_wave, mod_flux):
     flux_resamp = np.array(flux_resamp)
 
     return flux_resamp
+
+
+def verify_inputs(input_params):
+    """Verify input parameter names.
+    """
+
+    param_names = ['teff', 'dt_spot', 'f_spot', 'dt_fac', 'f_fac', 'logg_phot',
+                   'dg_spot', 'dg_fac', 'scale', 'sigma']
+    for param in input_params.keys():
+        if param not in param_names:
+            raise ValueError('Unknown parameter: {}'.format(param))
+
+    return input_params

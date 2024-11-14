@@ -39,7 +39,7 @@ class StellarModel:
         """
 
         self.stellar_grid = stellar_grid
-        self.input_parameters = input_parameters
+        self.input_parameters = utils.verify_inputs(input_parameters)
         self.spots, self.faculae = False, False
         self.model = None
         self.wavelengths = None
